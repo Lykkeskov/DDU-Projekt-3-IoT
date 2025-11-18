@@ -1,2 +1,3 @@
-# DDU-Projekt-3-IoT
-Internet of Things
+# Internet of Things
+[Miro](https://miro.com/welcomeonboard/NkhUUkRXOVlFdTM2ckk3TkxsOXpvc0FmRkwyNlZETFRFRDgvdzdyVDNXaURqVHNDMTQxTGo2OFlqM245TzNSejhYNEdzdWtpcTdaL3MzSTZ3c1ZLUWdadHZFd3hkMGtMVWJ4UkVIUHc5UUtDb0VBbmlSbVIwZGlBRFBKSWltbnBQdGo1ZEV3bUdPQWRZUHQzSGl6V2NBPT0hdjE=?share_link_id=732507832792)
+[Trello](https://trello.com/invite/b/691c32cc951475a1223717e0/ATTIe7ede2941dbf6e332a0e46e44462bbb96955F3A5/ddu-3)
