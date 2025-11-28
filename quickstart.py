@@ -1,4 +1,5 @@
 import os.path
+import base64
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,9 +19,7 @@ def get_credentials():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
-            )
+            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
 
         with open("token.json", "w") as token:
@@ -29,47 +28,45 @@ def get_credentials():
     return creds
 
 
+def extract_html_part(payload):
+    """Extracts HTML part recursively."""
+    mime = payload.get("mimeType", "")
+    body = payload.get("body", {}).get("data")
+
+    if mime == "text/html" and body:
+        return base64.urlsafe_b64decode(body).decode("utf-8")
+
+    if payload.get("parts"):
+        for part in payload["parts"]:
+            html = extract_html_part(part)
+            if html:
+                return html
+
+    return None
+
+
 def list_emails_in_inbox(service):
-    # Fetch all messages in INBOX
     results = service.users().messages().list(
-        userId="me",
-        labelIds=["INBOX"],
-        maxResults=1000  # adjust as needed
+        userId="me", labelIds=["INBOX"], maxResults=50
     ).execute()
 
     messages = results.get("messages", [])
 
-    if not messages:
-        print("No emails found.")
-        return
-
-    print(f"Found {len(messages)} emails:\n")
-
-    # Loop through each email
     for msg in messages:
         msg_id = msg["id"]
-
-        # Get the full email message
         email = service.users().messages().get(
-            userId="me",
-            id=msg_id,
-            format="full"
+            userId="me", id=msg_id, format="full"
         ).execute()
 
-        headers = email["payload"].get("headers", [])
-        snippet = email.get("snippet", "")
+        html = extract_html_part(email["payload"])
 
-        # Extract common fields
-        subject = next((h["value"] for h in headers if h["name"] == "Subject"), "(No Subject)")
-        sender = next((h["value"] for h in headers if h["name"] == "From"), "(Unknown Sender)")
-        date = next((h["value"] for h in headers if h["name"] == "Date"), "(No Date)")
-
-        print("============================================")
-        print(f"From: {sender}")
-        print(f"Subject: {subject}")
-        print(f"Date: {date}")
-        print(f"Snippet: {snippet}")
-        print("============================================\n")
+        if html:
+            filename = f"email_{msg_id}.html"
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"✓ Saved HTML: {filename}")
+        else:
+            print("No HTML found in this email.")
 
 
 def main():
