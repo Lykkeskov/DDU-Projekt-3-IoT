@@ -7,11 +7,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 from bs4 import BeautifulSoup
+import re
+import textwrap
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
-# ---------- AUTH ----------
+# AUTH
 def get_credentials():
     creds = None
 
@@ -33,7 +35,7 @@ def get_credentials():
     return creds
 
 
-# ---------- EMAIL PARSING ----------
+# EMAIL PARSING
 def extract_html_part(payload):
     """Recursively extracts HTML part from email payload."""
     mime = payload.get("mimeType", "")
@@ -51,24 +53,32 @@ def extract_html_part(payload):
     return None
 
 
-def html_to_text(html):
-    """Convert HTML to clean plain text."""
+def html_to_text(html, line_width=32):
     soup = BeautifulSoup(html, "html.parser")
 
-    # Remove scripts/styles
+    # Remove scripts and styles
     for tag in soup(["script", "style"]):
         tag.decompose()
 
+    # Get raw text
     text = soup.get_text(separator="\n")
 
-    # Clean excessive blank lines
-    lines = [line.strip() for line in text.splitlines()]
-    cleaned = "\n".join(line for line in lines if line)
+    # Remove zero-width and non-breaking junk
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[\u200B-\u200D\uFEFF]", "", text)
 
-    return cleaned
+    # Collapse excessive whitespace
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            wrapped = textwrap.fill(line, width=line_width)
+            lines.append(wrapped)
+
+    return "\n".join(lines)
 
 
-# ---------- GMAIL ----------
+# GMAIL
 def list_emails_in_inbox(service, max_results=10):
     results = service.users().messages().list(
         userId="me",
@@ -105,7 +115,7 @@ def list_emails_in_inbox(service, max_results=10):
             print(f"✗ No HTML found for message {msg_id}")
 
 
-# ---------- MAIN ----------
+# MAIN
 def main():
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds)
