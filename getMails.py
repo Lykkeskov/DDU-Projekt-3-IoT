@@ -78,6 +78,18 @@ def html_to_text(html, line_width=32):
     return "\n".join(lines)
 
 
+def estimate_co2_grams(bytes_used, g_per_gb=100):
+    """
+    Estimer CO2 udledning fra data i gram.
+
+    Args:
+        bytes_used: total størrelse af emails i bytes
+        g_per_gb: gram af CO2 per GB (default 0.1 kg/GB = 100 g/GB)
+    """
+    gb = bytes_used / 1_000_000_000  # convert bytes → GB
+    return gb * g_per_gb
+
+
 # GMAIL
 def list_emails_in_inbox(service, max_results=10):
     results = service.users().messages().list(
@@ -87,6 +99,8 @@ def list_emails_in_inbox(service, max_results=10):
     ).execute()
 
     messages = results.get("messages", [])
+
+    total_bytes = 0
 
     if not messages:
         print("No emails found.")
@@ -101,6 +115,9 @@ def list_emails_in_inbox(service, max_results=10):
             format="full",
         ).execute()
 
+        size_bytes = email.get("sizeEstimate", 0)
+        total_bytes += size_bytes
+
         html = extract_html_part(email["payload"])
 
         if html:
@@ -113,6 +130,13 @@ def list_emails_in_inbox(service, max_results=10):
             print(f"✓ Saved TEXT: {filename}")
         else:
             print(f"✗ No HTML found for message {msg_id}")
+
+    co2_g = estimate_co2_grams(total_bytes)
+
+    print("\n===== SUMMARY =====")
+    print(f"Emails processed: {len(messages)}")
+    print(f"Total storage: {total_bytes} bytes")
+    print(f"Estimated CO₂: {co2_g:.3f} g")
 
 
 # MAIN
