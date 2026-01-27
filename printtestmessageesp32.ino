@@ -1,27 +1,64 @@
+#include <WiFi.h>
+#include <WebServer.h>
 #include <HardwareSerial.h>
 
-// Sådan forbinder man printeren:
-// GND -> GND
-// Printer RX -> IO25
-// Printer TX -> IO27
-// Strøm sættes i stikkontakten indtil videre
+// -------- ACCESS POINT SETTINGS --------
+const char* ap_ssid = "ESP32-PRINTER";
+const char* ap_password = "print1234";
 
+// -------- PRINTER UART --------
 HardwareSerial Printer(2);
+#define PRINTER_RX 27
+#define PRINTER_TX 25
 
-void setup() {
-  delay(2000);
+// -------- WEB SERVER --------
+WebServer server(80);
 
-  Printer.begin(19200, SERIAL_8N1, 27, 25); // RX, TX
+void handlePrint() {
+  Serial.println("PRINT REQUEST RECEIVED");
+
+  if (!server.hasArg("plain")) {
+    Serial.println("No body!");
+    server.send(400, "text/plain", "No data received");
+    return;
+  }
+
+  String text = server.arg("plain");
+  Serial.println("Text:");
+  Serial.println(text);
 
   Printer.write(0x1B);
   Printer.write('@');
-
-  Printer.println("HELLO FROM ESP32");
-  Printer.println("THERMAL PRINTER OK");
+  Printer.println(text);
 
   Printer.write(0x1B);
   Printer.write('d');
   Printer.write(3);
+
+  server.send(200, "text/plain", "Printed OK");
 }
 
-void loop() {}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Start printer UART
+  Printer.begin(19200, SERIAL_8N1, PRINTER_RX, PRINTER_TX);
+  delay(1000);
+
+  // Start Access Point
+  WiFi.softAP(ap_ssid, ap_password);
+
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("ESP32 AP IP: ");
+  Serial.println(IP);
+
+  // Start server
+  server.on("/print", HTTP_POST, handlePrint);
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  server.handleClient();
+}
