@@ -5,13 +5,14 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+# ------------------ CONFIG ------------------ #
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-
-ESP32_URL = "http://192.168.4.1/print"  # ESP32 AP IP
-
-EMAIL_FOLDER = "emails"  # local folder to save emails
+ESP32_URL = "http://10.147.138.223/print"  # Change to your ESP32 IP
+MAX_LINE_LENGTH = 32  # Adjust to printer width
+# -------------------------------------------- #
 
 def get_credentials():
+    """Authenticate with Gmail and return credentials."""
     creds = None
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
@@ -25,68 +26,107 @@ def get_credentials():
             token.write(creds.to_json())
     return creds
 
+
 def extract_plain_text(payload):
+    """Recursively extract plain text from email payload."""
     mime = payload.get("mimeType", "")
     body = payload.get("body", {}).get("data")
+
     if mime == "text/plain" and body:
         return base64.urlsafe_b64decode(body).decode("utf-8")
+
     if payload.get("parts"):
         for part in payload["parts"]:
             text = extract_plain_text(part)
             if text:
                 return text
+
     return None
 
-def wrap_text(text, width=32):
+
+def format_for_printer(text):
+    """Split text into lines that fit printer width."""
     lines = []
     for paragraph in text.splitlines():
-        while len(paragraph) > width:
-            lines.append(paragraph[:width])
-            paragraph = paragraph[width:]
-        lines.append(paragraph)
+        while len(paragraph) > 0:
+            line = paragraph[:MAX_LINE_LENGTH]
+            lines.append(line)
+            paragraph = paragraph[MAX_LINE_LENGTH:]
     return "\n".join(lines)
 
-def list_emails(service):
-    results = service.users().messages().list(userId="me", labelIds=["INBOX"], maxResults=50).execute()
+
+def calculate_co2(email_sizes):
+    """
+    Estimate CO2 emission based on email size.
+    Uses:
+        - 0.3 g CO2 per KB
+        - 50 g CO2 per MB
+    Returns total in grams.
+    """
+    total = 0
+    for size in email_sizes:
+        if size < 1000:  # KB
+            total += 0.3
+        else:  # MB
+            total += 50
+    return round(total, 2)
+
+
+def fetch_emails(service, max_results=10):
+    """Fetch the latest emails from Gmail inbox."""
+    results = service.users().messages().list(
+        userId="me", labelIds=["INBOX"], maxResults=max_results
+    ).execute()
     messages = results.get("messages", [])
-    email_texts = []
-    total_bytes = 0
+    emails = []
+    sizes = []
+
     for msg in messages:
         msg_id = msg["id"]
-        email = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
-        text = extract_plain_text(email["payload"])
-        if text:
-            text = wrap_text(text)
-            email_texts.append(text)
-            total_bytes += len(text.encode("utf-8"))
-            # save locally
-            with open(f"{EMAIL_FOLDER}/email_{msg_id}.txt", "w", encoding="utf-8") as f:
-                f.write(text)
-    return email_texts, total_bytes
+        email = service.users().messages().get(
+            userId="me", id=msg_id, format="full"
+        ).execute()
 
-def co2_from_bytes(num_bytes):
-    # 0.004 g CO2 per byte (adjust if needed)
-    return num_bytes * 0.004
+        plain_text = extract_plain_text(email["payload"])
+        if plain_text:
+            emails.append(format_for_printer(plain_text))
+            sizes.append(email.get("sizeEstimate", 0))
+        else:
+            emails.append("[No plain text found]")
+            sizes.append(email.get("sizeEstimate", 0))
+
+    return emails, sizes
+
+
+def send_to_esp32(email_text, co2_text):
+    """Send email text and CO2 info to ESP32 via HTTP POST."""
+    data = {
+        "plain": email_text,
+        "co2": co2_text
+    }
+    try:
+        response = requests.post(ESP32_URL, data=data, timeout=5)
+        if response.status_code == 200:
+            print("✅ Sent to ESP32 successfully")
+        else:
+            print(f"⚠️ ESP32 responded with status: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"❌ Failed to send to ESP32: {e}")
+
 
 def main():
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds)
 
-    emails, total_bytes = list_emails(service)
-    co2_grams = co2_from_bytes(total_bytes)
-    co2_message = f"CO2e: {co2_grams:.1f} g"
+    emails, sizes = fetch_emails(service, max_results=10)
+    total_co2 = calculate_co2(sizes)
+    co2_text = f"CO2: {total_co2} g"
 
-    # Send to printer
-    for text in emails:
-        r = requests.post(ESP32_URL, data=text, headers={"Content-Type": "text/plain"})
-        if r.status_code != 200:
-            print("Printer error:", r.text)
+    for i, email in enumerate(emails):
+        print(f"\n--- Printing email {i+1} ---\n")
+        print(email)
+        send_to_esp32(email, co2_text)
 
-    # Send CO2 to LCD (optional arg)
-    # Here we append co2_message to request; the ESP32 uses it to scroll line 2
-    requests.post(ESP32_URL, data=" ", headers={"Content-Type": "text/plain"}, params={"co2": co2_message})
-
-    print(f"✅ Printed {len(emails)} emails, total {total_bytes} bytes, CO2: {co2_grams:.1f} g")
 
 if __name__ == "__main__":
     from googleapiclient.discovery import build
