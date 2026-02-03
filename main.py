@@ -4,10 +4,9 @@ import requests
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-
 # ------------------ CONFIG ------------------ #
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-ESP32_URL = "http://10.147.138.223/print"  # Change to your ESP32 IP
+ESP32_URL = "http://10.147.138.134/print"  # Change to your ESP32 IP
 MAX_LINE_LENGTH = 32  # Adjust to printer width
 # -------------------------------------------- #
 
